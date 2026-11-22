@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .db import Base
@@ -58,3 +58,24 @@ class Job(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class RegressionSuite(Base):
+    __tablename__ = "regression_suites"
+    __table_args__ = (UniqueConstraint("project_id", "name", name="uq_regression_suite_project_name"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
+    dataset_id: Mapped[int] = mapped_column(ForeignKey("datasets.id"))
+    source_job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id"))
+    name: Mapped[str] = mapped_column(String(120))
+    snapshot: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class SuiteRun(Base):
+    __tablename__ = "suite_runs"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    suite_id: Mapped[int] = mapped_column(ForeignKey("regression_suites.id", ondelete="CASCADE"))
+    job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id"), unique=True)
+    comparison: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
