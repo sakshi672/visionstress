@@ -1,54 +1,115 @@
-# VisionStress Phase 1 completion checklist
+# VisionStress MVP plan and completion checklist
 
-Update checkboxes only when the work is implemented and verified. Record blockers and verification evidence below as work progresses. Baseline evaluation is a prerequisite for milestone 2.
+This plan tracks the new full-stack VisionStress MVP. Check an item only after the implementation has been run and verified. Preserve the working Phase 1 CLI and its measured baseline as the web app is built around it.
 
-## Milestone 1: Environment and baseline
+## Existing foundation — verified
 
-- [x] Establish a Python 3.11+ virtual environment, project structure, dependency compatibility, and version-control exclusions for datasets, weights, and outputs.
-- [x] Select a trusted, CPU-compatible pretrained YOLO checkpoint; document its source, version, SHA-256, and licensing, including commercial-use considerations.
-- [x] Select a real, publicly available labeled detection dataset of approximately 100–300 images; document provenance and licensing.
-- [x] Implement setup and configuration for the model and dataset, with useful errors if downloads are unavailable.
-- [x] Validate image/annotation pairing, bounding boxes, class IDs, and model-to-dataset class mappings.
-- [x] Implement configurable inference and an established detection evaluator; document IoU thresholds, confidence handling, class mappings, and matching settings.
-- [x] Run real baseline inference and calculate precision, recall, mAP@0.5, mAP@0.5:0.95, supported per-class AP, false-positive/false-negative counts, and separate inference latency.
-- [x] Save baseline predictions, ground-truth references, metrics, and reproducibility metadata; verify the baseline before continuing.
+- [x] Create the Python package, configuration, setup, validation, and baseline CLI.
+- [x] Pin and verify official YOLO11n/s/m checkpoint hashes before loading them.
+- [x] Download and validate a fixed 128-image COCO val2017 subset (906 annotations).
+- [x] Evaluate real predictions with COCOeval and save predictions, metrics, manifests, hashes, and environment details.
+- [x] Compare YOLO11n/s/m on the same images and settings. YOLO11m is the current default; its measured mAP@0.5:0.95 was 0.5741 on this development subset.
 
-## Milestone 2: Visual stress testing
+The COCO subset and existing runs are a development benchmark, not an independent test set or a redistributable demo package. The [README](README.md) documents the exact setup and baseline method. Existing CLI functionality must continue to pass as the architecture changes.
 
-- [ ] Implement low light, Gaussian blur, motion blur, Gaussian noise, and JPEG compression, each with three documented numeric severity levels.
-- [ ] Verify seeded determinism, preserved image dimensions and geometry, and consistent color spaces; save exact parameters for every transformed image.
-- [ ] Evaluate the same images with the same model and settings across all 15 stressed scenarios, saving raw predictions and metrics.
-- [ ] Calculate absolute and relative changes, handle zero or undefined baselines, compare severity and class impacts, and rank conditions by measured impact.
+## Phase 1 — Architecture and runnable vertical slice
 
-## Milestone 3: Failure analysis
+- [x] Inspect the existing repository and define the updated implementation plan.
+- [x] Establish a monorepo layout for FastAPI, the worker, React/TypeScript/Vite/Tailwind, tests, and documentation.
+- [x] Add PostgreSQL runtime models and Alembic migrations; use SQLite only in automated tests.
+- [x] Add a filesystem artifact-storage interface, Docker Compose services, and health checks.
+- [x] Implement the smallest complete slice: create a project; register one valid YOLO-format dataset and one approved checkpoint; queue baseline plus seeded stress; run it in a separate worker; save real metrics; display the job and result in the dashboard.
+- [x] Verify the API/worker slice end to end on CPU against PostgreSQL and retain measured jobs and a report as evidence.
+- [ ] Complete visual browser QA of the dashboard; the browser tool failed to initialize in this session.
 
-- [ ] Identify false positives, false negatives, localization errors, and detections that become incorrect under stress using documented matching rules.
-- [ ] Rank failures using lost true positives, newly introduced false negatives, and localization deterioration.
-- [ ] Preserve original and transformed images, ground truth, baseline and stressed predictions, confidence scores, scenario details, and evaluation settings.
-- [ ] Generate annotated before-and-after comparisons and a gallery of up to 20 informative failures.
+**Acceptance:** One documented command starts API, worker, database, and frontend; a user can finish the slice without manually editing database rows. HTTP requests remain responsive during inference. No result is hardcoded.
 
-## Milestone 4: Reporting and verification
+## Phase 2 — Dataset ingestion and trusted model registry
 
-- [ ] Generate readable baseline, severity, degradation, per-class, and failure-gallery visualizations from measured results.
-- [ ] Produce a standalone HTML report with executive summary, methodology, results, failure analysis, and limitations; export CSV and JSON.
-- [ ] Implement report regeneration from saved results without rerunning inference.
-- [ ] Save each run in a unique directory with configuration, seeds, model and dataset hashes and manifest, versions, hardware, inference settings, transform parameters, predictions, results, plots, and report.
-- [ ] Test transformations, shape preservation, severity validation, annotations, class mapping, known evaluator results, degradation calculations, report generation, and CLI configuration with appropriate fixtures.
-- [ ] Run unit tests and at least one actual end-to-end benchmark when model and dataset are available; resolve failures.
-- [ ] Add exact, verified installation and execution commands to the README.
+- [x] Implement project create/list/edit/delete API and dashboard create/list flows.
+- [ ] Add dashboard project edit/delete controls.
+- [x] Register YOLO-format datasets with image/label pairing, allowed formats, readable dimensions, normalized box bounds, valid class IDs, and duplicate checks.
+- [ ] Reject traversal, symlinks outside the storage root, oversized uploads, unsafe archives, and decompression bombs; test these failures.
+- [x] Create deterministic, disjoint validation/test splits; store their manifests and hashes so leakage is detectable.
+- [x] Show dataset image count, box count, class distribution, and sample images.
+- [x] Register only approved YOLO11 detection checkpoints by trusted local path and pinned SHA-256; record checkpoint name, provenance, supported classes, and hash. Keep model uploads disabled.
+- [ ] Add configurable per-model inference settings to the registry; current fixed settings are saved per run.
+- [x] Require matching model and dataset class names/order before evaluation.
 
-## Completion criteria
+**Acceptance:** Invalid datasets and unapproved checkpoints are rejected before inference. A registered dataset can be independently revalidated against its stored manifest.
 
-- [ ] A real pretrained YOLO model and real labeled dataset have been evaluated across baseline and all 15 stress scenarios.
-- [ ] Metrics and reproducibility artifacts have been saved, and a report has been generated from measured results.
-- [ ] At least one complete benchmark and the unit tests have passed.
-- [ ] Remaining limitations, licensing considerations, and any unverified work are documented without fabricated results.
+## Phase 3 — Deterministic stress and evaluation
 
-## Progress and blockers
+- [x] Implement brightness/contrast, Gaussian blur, motion blur, Gaussian noise, JPEG compression, fog, rain, partial occlusion, color shift, and defocus, each at severity 1–5 with an explicit seed.
+- [x] Save exact per-image transform parameters; test seeded determinism, image geometry, and color handling.
+- [x] Keep label-preserving transforms in the core benchmark. Mark occlusion as exploratory because labels may be hidden.
+- [x] Run original and stressed images with the same confidence, NMS, image size, class mapping, and evaluator settings.
+- [x] Use COCOeval for precision, recall, mAP@0.5, mAP@0.5:0.95, and supported per-class results; keep inference latency separate.
+- [x] Save raw predictions, ground truth, degradation, sample-size warnings, undefined metrics, seeds, model/dataset hashes, code hash, library versions, and evaluation settings.
+- [x] Test evaluator correctness on known examples and degradation math, including zero or undefined baselines.
+- [x] Verify metric reproducibility across repeated runs in the same PostgreSQL environment to a documented tolerance.
+- [ ] Decide whether to integrate the unmaintained MIT Albumentations package or its AGPL/commercial successor; current transforms use OpenCV/NumPy.
 
-- Milestone 1 passed on 22 November 2026 with Python 3.13.5 and CPU PyTorch 2.15.0. `pip check` found no broken requirements; baseline tests passed.
-- `visionstress setup` and `visionstress validate` prepared and checked 128 COCO val2017 images, 906 annotations, and 80 model-to-dataset class mappings.
-- The successful baseline run is `outputs/20261122T085514Z_78c0cf1a` (ignored by Git). It measured mAP@0.5 = 0.6068 and mAP@0.5:0.95 = 0.4522. Its predictions, annotations, configuration, hashes, environment, and metrics were saved.
-- Compared official YOLO11n, YOLO11s, and YOLO11m on the same 128 images and settings. Medium reached mAP@0.5 = 0.7322 and mAP@0.5:0.95 = 0.5741, so it is now the default checkpoint. Small reached 0.7007 and 0.5316. Mean CPU inference times were 102.7, 171.7, and 430.4 ms/image for nano, small, and medium. This model choice was made on the evaluation subset, so its apparent improvement needs confirmation on independent images.
-- A preceding run, `outputs/20261122T085354Z_294afe99`, completed inference but failed during metric aggregation. The evaluator was fixed and the full run then passed. That earlier directory contains incomplete results and should not be used for reporting.
-- Milestones 2–4 remain open. No stressed benchmark or HTML report exists yet.
+**Acceptance:** Repeating a run in the same environment reproduces transformed images and metrics within documented numerical tolerances. Reported numbers come from saved inference artifacts.
+
+## Phase 4 — Dashboard and failure discovery
+
+- [x] Build responsive overview, dataset/model registration, new-evaluation, job-status, and result views with empty and error states.
+- [ ] Add dedicated explorer views and polished loading states, then complete visual browser QA.
+- [ ] Show robustness overview, metric trends by condition/severity, per-class impact, and model version comparison from API data.
+- [x] Identify false negatives, false positives, and localization failures with a documented simple class-aware matching rule.
+- [x] Rank examples by new false negatives, false positives, and localization failures.
+- [ ] Add repeatability ranking and clustering of visually similar failures.
+- [x] Show original and transformed images side by side with ground truth and predictions; save confidence and transform settings in linked artifacts.
+- [x] Test the API-backed project-creation frontend workflow with Vitest.
+- [ ] Test the full create-to-result frontend workflow.
+
+**Acceptance:** A user can trace a metric change to the underlying images, labels, predictions, and transformation parameters.
+
+## Phase 5 — Regression suites, jobs, reports, and CI
+
+- [ ] Save named suites of selected failure cases, including dataset references, seeds, transforms, model configuration, and prior results.
+- [ ] Rerun suites against another approved model version, compare outcomes, and apply a configurable metric threshold as a deployment gate.
+- [x] Export measured machine-readable JSON and a standalone human-readable HTML demo report.
+- [x] Persist job state, progress, timestamps, errors, retries, and cancellation; run one worker at a time and enforce an execution timeout.
+- [x] Add API error-handling and job-state tests.
+- [ ] Add suite-reproducibility and archive/upload-security tests after those features exist.
+- [x] Add GitHub Actions definitions for backend pytest, frontend Vitest/build, and migration checks; equivalent local checks passed.
+- [ ] Verify the workflow in GitHub Actions after code is published.
+
+**Acceptance:** Restarting API or worker does not lose queued or completed jobs; a rerun produces a reviewable comparison and explicit pass/fail gate result.
+
+## Phase 6 — Demo and documentation
+
+- [x] Provide a one-command CPU demo that obtains the COCO sample through documented user-side download/setup, verifies an approved model, runs baseline plus three stress conditions, and generates a report.
+- [x] Run the demo against PostgreSQL and the worker, inspect outputs, fix failures, and record exact commands and measured results.
+- [x] Update README with installation, quick start, API examples, YOLO data specification, architecture, model trust and licensing, evaluation method, limitations, and an example customer workflow.
+- [x] Re-run backend and frontend checks and record unresolved limitations without fabricated results.
+
+**Acceptance:** A new contributor can reproduce the demo from documented commands on a CPU machine with Docker and downloaded assets.
+
+## Architecture target
+
+```mermaid
+flowchart LR
+    UI[React dashboard] --> API[FastAPI and OpenAPI]
+    API --> DB[(PostgreSQL)]
+    API --> STORE[(Filesystem artifact store)]
+    WORKER[Separate bounded worker] --> DB
+    WORKER --> STORE
+    WORKER --> ENGINE[Verified YOLO + COCOeval]
+```
+
+The API queues evaluations rather than running inference in a request. The worker claims durable jobs, verifies inputs, writes artifacts through a storage interface, and commits progress and results. PostgreSQL is the runtime database; SQLite is only for tests. The filesystem store should permit a future S3 implementation without changing the evaluation engine.
+
+## Current evidence, assumptions, and blockers
+
+- The existing CLI baseline passed on 22 November 2026 with Python 3.13.5 and CPU PyTorch 2.15.0; the prior tests and `pip check` passed. Local run directories are Git-ignored.
+- Existing measured mAP@0.5:0.95 on the 128-image development subset: YOLO11n 0.4522, YOLO11s 0.5316, YOLO11m 0.5741. Selecting the default on this subset can bias later comparisons; use a separate test split for claims about generalization.
+- Ultralytics code and checkpoints have AGPL-3.0 or Enterprise licensing terms. COCO images retain their owners' rights. The demo must download assets into ignored local storage rather than commit them. Synthetic stress results are diagnostic and are not safety certification.
+- The PostgreSQL demo completed three jobs on 22 November 2026 using the locally downloaded 8-image COCO YOLO conversion (6 validation images, 54 boxes total). All three jobs remained completed after API/worker restart. Baseline mAP@0.5:0.95 was 0.3981; severity-3 brightness, Gaussian blur, and JPEG yielded 0.4055, 0.3995, and 0.3974. These are tiny-sample integration results, not production robustness estimates.
+- A repeat of the seeded brightness job matched baseline and stressed accuracy metrics within 1e-6. Ground-truth and per-image transformation-parameter artifacts matched byte-for-byte. Inference timing is hardware/load dependent and is excluded from the tolerance.
+- `pytest` passed 20 tests; frontend Vitest passed 1 test, frontend production build passed, `pip check` found no broken requirements, and the frontend dependency audit reported zero vulnerabilities. Docker Compose API, web, proxy, sample-image, and comparison-image HTTP checks returned 200.
+- Browser visual QA could not run because the browser tool failed to initialize. Archive upload security, regression suites, clustering, authentication, and broader frontend workflows remain open.
+- Model uploads remain disabled. Never deserialize an unverified user-provided checkpoint or execute user-supplied model code.
+- Previous requests to stage or commit local work were declined; these changes remain local and no Git write should be attempted without new authorization.

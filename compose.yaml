@@ -1,0 +1,49 @@
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: visionstress
+      POSTGRES_PASSWORD: visionstress
+      POSTGRES_DB: visionstress
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U visionstress"]
+      interval: 3s
+      retries: 20
+  api:
+    build: .
+    environment:
+      VISIONSTRESS_DATABASE_URL: postgresql+psycopg://visionstress:visionstress@db:5432/visionstress
+    command: ["sh", "-c", "alembic upgrade head && uvicorn visionstress.service.api:app --host 0.0.0.0 --port 8000"]
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ./src:/app/src:ro
+      - ./data:/app/data
+      - ./models:/app/models:ro
+      - ./outputs:/app/outputs
+    depends_on:
+      db:
+        condition: service_healthy
+  worker:
+    build: .
+    environment:
+      VISIONSTRESS_DATABASE_URL: postgresql+psycopg://visionstress:visionstress@db:5432/visionstress
+    command: ["python", "-m", "visionstress.service.worker"]
+    volumes:
+      - ./src:/app/src:ro
+      - ./data:/app/data:ro
+      - ./models:/app/models:ro
+      - ./outputs:/app/outputs
+    depends_on:
+      api:
+        condition: service_started
+  web:
+    build: ./web
+    ports:
+      - "127.0.0.1:5173:5173"
+    depends_on:
+      - api
+volumes:
+  pgdata:
