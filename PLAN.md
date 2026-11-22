@@ -68,12 +68,13 @@ The COCO subset and existing runs are a development benchmark, not an independen
 
 ## Phase 5 — Regression suites, jobs, reports, and CI
 
-- [ ] Save named suites of selected failure cases, including dataset references, seeds, transforms, model configuration, and prior results.
-- [ ] Rerun suites against another approved model version, compare outcomes, and apply a configurable metric threshold as a deployment gate.
+- [x] Save named suites of selected failure cases, including dataset references, seeds, transforms, model configuration, and prior results recalculated on the selected cases.
+- [x] Rerun suites against an approved model, compare outcomes on the same images, and apply a configurable absolute metric-drop threshold with pass/fail/inconclusive results.
 - [x] Export measured machine-readable JSON and a standalone human-readable HTML demo report.
 - [x] Persist job state, progress, timestamps, errors, retries, and cancellation; run one worker at a time and enforce an execution timeout.
 - [x] Add API error-handling and job-state tests.
-- [ ] Add suite-reproducibility and archive/upload-security tests after those features exist.
+- [x] Add suite selection, gate, and same-model reproducibility checks against the PostgreSQL worker.
+- [ ] Add archive/upload-security tests if an archive upload feature is introduced; registration currently accepts local directories only.
 - [x] Add GitHub Actions definitions for backend pytest, frontend Vitest/build, and migration checks; equivalent local checks passed.
 - [ ] Verify the workflow in GitHub Actions after code is published.
 
@@ -109,7 +110,8 @@ The API queues evaluations rather than running inference in a request. The worke
 - Ultralytics code and checkpoints have AGPL-3.0 or Enterprise licensing terms. COCO images retain their owners' rights. The demo must download assets into ignored local storage rather than commit them. Synthetic stress results are diagnostic and are not safety certification.
 - The PostgreSQL demo completed three jobs on 22 November 2026 using the locally downloaded 8-image COCO YOLO conversion (6 validation images, 54 boxes total). All three jobs remained completed after API/worker restart. Baseline mAP@0.5:0.95 was 0.3981; severity-3 brightness, Gaussian blur, and JPEG yielded 0.4055, 0.3995, and 0.3974. These are tiny-sample integration results, not production robustness estimates.
 - A repeat of the seeded brightness job matched baseline and stressed accuracy metrics within 1e-6. Ground-truth and per-image transformation-parameter artifacts matched byte-for-byte. Inference timing is hardware/load dependent and is excluded from the tolerance.
-- `pytest` passed 20 tests; frontend Vitest passed 1 test, frontend production build passed, `pip check` found no broken requirements, and the frontend dependency audit reported zero vulnerabilities. Docker Compose API, web, proxy, sample-image, and comparison-image HTTP checks returned 200.
-- Browser visual QA could not run because the browser tool failed to initialize. Archive upload security, regression suites, clustering, authentication, and broader frontend workflows remain open.
+- On 22 November 2026, a PostgreSQL regression suite selected two brightness failure images from job 1. A same-model candidate job completed with reference and candidate mAP@0.5:0.95 both 0.3471875491, so the 0.02-drop gate passed. Saved per-image transform parameters matched exactly; the 1e-6 accuracy tolerance passed. The two-image result is diagnostic only.
+- `pytest` passed 22 tests; frontend Vitest passed 2 tests, frontend production build passed, `pip check` found no broken requirements, and the frontend dependency audit reported zero vulnerabilities. Docker Compose API, web, proxy, sample-image, and comparison-image HTTP checks returned 200.
+- Browser visual QA could not run because the browser tool failed to initialize. Archive upload security, clustering, authentication, and broader frontend workflows remain open.
 - Model uploads remain disabled. Never deserialize an unverified user-provided checkpoint or execute user-supplied model code.
-- Previous requests to stage or commit local work were declined; these changes remain local and no Git write should be attempted without new authorization.
+- This work made no Git staging, commit, or push changes.

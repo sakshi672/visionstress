@@ -12,8 +12,10 @@ from visionstress.model import verify_model
 from visionstress.dataset import sha256
 from .db import make_engine, make_session_factory
 from .storage import LocalArtifactStore
-from .tables import Dataset, Job, Project, RegisteredModel
+from .tables import Dataset, Job, Project, RegisteredModel, RegressionSuite, SuiteRun
 from .yolo_data import validate_yolo_dataset
+from .suites import GATE_METRICS, build_snapshot
+from .runner import EVALUATOR, INFERENCE
 
 
 class ProjectInput(BaseModel):
@@ -40,6 +42,19 @@ class EvaluationInput(BaseModel):
     severity: int = Field(default=2, ge=1, le=5)
     seed: int = Field(default=42, ge=0, le=2**32 - 1)
     max_images: int = Field(default=12, ge=1, le=500)
+
+
+class SuiteInput(BaseModel):
+    project_id: int
+    source_job_id: int
+    name: str = Field(min_length=1, max_length=120)
+    image_ids: list[int] = Field(min_length=1, max_length=500)
+    metric: str = Field(default="map50_95")
+    max_absolute_drop: float = Field(default=0.02, ge=0, le=1)
+
+
+class SuiteRunInput(BaseModel):
+    model_id: int
 
 
 def record(obj, *names):
@@ -172,6 +187,71 @@ def create_app(session_factory=None, data_root: Path | None = None, model_root: 
             db.add(item)
             db.flush()
             return record(item, "id", "status", "progress", "spec")
+
+    def suite_record(db, item):
+        runs = db.scalars(select(SuiteRun).where(SuiteRun.suite_id == item.id).order_by(SuiteRun.id.desc())).all()
+        return {
+            **record(item, "id", "project_id", "dataset_id", "source_job_id", "name", "snapshot", "created_at"),
+            "runs": [{"id": run.id, "job_id": run.job_id, "status": db.get(Job, run.job_id).status, "comparison": run.comparison} for run in runs],
+        }
+
+    @app.get("/api/suites")
+    def suites(project_id: int):
+        with session_factory() as db:
+            return [suite_record(db, item) for item in db.scalars(select(RegressionSuite).where(RegressionSuite.project_id == project_id).order_by(RegressionSuite.id.desc()))]
+
+    @app.post("/api/suites", status_code=201)
+    def create_suite(body: SuiteInput):
+        with session_factory.begin() as db:
+            source = db.get(Job, body.source_job_id)
+            if not source or source.project_id != body.project_id:
+                raise HTTPException(404, "Source job not found in project")
+            if db.scalar(select(RegressionSuite.id).where(RegressionSuite.project_id == body.project_id, RegressionSuite.name == body.name)):
+                raise HTTPException(409, "Suite name already exists in project")
+            if body.metric not in GATE_METRICS:
+                raise HTTPException(422, "Unsupported gate metric")
+            dataset = db.get(Dataset, source.dataset_id)
+            model = db.get(RegisteredModel, source.model_id)
+            try:
+                snapshot = build_snapshot(store, source, dataset, model, body.image_ids, body.metric, body.max_absolute_drop)
+            except (ValueError, FileNotFoundError, KeyError) as error:
+                raise HTTPException(422, str(error)) from error
+            item = RegressionSuite(project_id=body.project_id, dataset_id=dataset.id, source_job_id=source.id, name=body.name, snapshot=snapshot)
+            db.add(item)
+            db.flush()
+            return suite_record(db, item)
+
+    @app.get("/api/suites/{suite_id}")
+    def suite(suite_id: int):
+        with session_factory() as db:
+            item = db.get(RegressionSuite, suite_id)
+            if not item:
+                raise HTTPException(404, "Suite not found")
+            return suite_record(db, item)
+
+    @app.post("/api/suites/{suite_id}/runs", status_code=202)
+    def run_suite(suite_id: int, body: SuiteRunInput):
+        with session_factory.begin() as db:
+            suite = db.get(RegressionSuite, suite_id)
+            if not suite:
+                raise HTTPException(404, "Suite not found")
+            dataset = db.get(Dataset, suite.dataset_id)
+            model = db.get(RegisteredModel, body.model_id)
+            if not model or model.project_id != suite.project_id:
+                raise HTTPException(404, "Model not found in suite project")
+            snapshot = suite.snapshot
+            if dataset.digest != snapshot["dataset_sha256"] or dataset.manifest["classes"] != model.classes:
+                raise HTTPException(422, "Dataset changed or model classes differ from suite")
+            if snapshot["inference"] != INFERENCE or snapshot["evaluation"] != EVALUATOR:
+                raise HTTPException(409, "Runner settings changed since suite creation")
+            spec = {"project_id": suite.project_id, "dataset_id": dataset.id, "model_id": model.id, "stress": snapshot["stress"], "severity": snapshot["severity"], "seed": snapshot["seed"], "max_images": len(snapshot["image_ids"]), "image_ids": snapshot["image_ids"], "inference": snapshot["inference"], "evaluation": snapshot["evaluation"]}
+            job = Job(project_id=suite.project_id, dataset_id=dataset.id, model_id=model.id, spec=spec, status="queued", progress=0)
+            db.add(job)
+            db.flush()
+            run = SuiteRun(suite_id=suite.id, job_id=job.id)
+            db.add(run)
+            db.flush()
+            return {"id": run.id, "job_id": job.id, "status": job.status, "comparison": None}
 
     @app.get("/api/jobs")
     def jobs(project_id: int):

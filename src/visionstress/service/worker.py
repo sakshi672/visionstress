@@ -9,7 +9,8 @@ from sqlalchemy import select
 from .db import make_engine, make_session_factory
 from .runner import JobCancelled, execute_job
 from .storage import LocalArtifactStore
-from .tables import Job, utcnow
+from .tables import Job, RegressionSuite, SuiteRun, utcnow
+from .suites import compare_suite
 
 log = logging.getLogger(__name__)
 
@@ -36,6 +37,10 @@ def process_next(session_factory, store: LocalArtifactStore) -> int | None:
         with session_factory.begin() as db:
             item = db.get(Job, job_id)
             item.status, item.result, item.progress, item.finished_at = "completed", result, 100, utcnow()
+            suite_run = db.scalar(select(SuiteRun).where(SuiteRun.job_id == job_id))
+            if suite_run:
+                suite = db.get(RegressionSuite, suite_run.suite_id)
+                suite_run.comparison = compare_suite(suite.snapshot, result)
     return job_id
 
 

@@ -146,9 +146,24 @@ GET  /api/jobs/1/artifacts/result.json
 
 Projects can be listed, edited, and deleted; registered datasets and models can be listed per project. Jobs can be listed, cancelled, and retried after failure (up to three attempts). A job records status, progress, timestamps, error, request settings, and results. Artifacts include COCO ground truth, baseline and stressed predictions, per-image transform parameters, environment, result JSON, ranked failure examples, and annotated original/stressed image pairs. The worker enforces a 30-minute evaluation timeout; cancellation is checked between images. Stale running jobs are marked failed when the worker restarts after the timeout window.
 
+## Regression suites
+
+After a completed evaluation, select ranked cases in the dashboard's **Failure-case suites** section. A named suite freezes the selected validation image IDs, dataset and source-model hashes, stress, severity, seed, inference/evaluator settings, and a COCOeval reference recalculated from the source job's saved ground truth and predictions on *only those selected images*. This avoids comparing a candidate's small failure subset against the source job's full-run aggregate. The source artifacts remain available for inspection.
+
+```text
+POST /api/suites         {"project_id":1,"source_job_id":1,"name":"Low-light misses","image_ids":[1,5],"metric":"map50_95","max_absolute_drop":0.02}
+GET  /api/suites?project_id=1
+POST /api/suites/1/runs  {"model_id":2}
+GET  /api/suites/1
+```
+
+The rerun is a normal durable worker job against an approved model with the exact saved image IDs and seed. The suite returns a `passed` gate when `candidate - reference >= -max_absolute_drop`, otherwise `failed`. Undefined metrics and exploratory occlusion yield `inconclusive`. Results include both measured values, the absolute change, threshold, and job link. The gate compares synthetic robustness on this selected set; very small or failure-selected sets are diagnostic rather than independent deployment evidence. Rebuild the API image after adding migrations because Compose mounts `src/` but packages migration files inside the image.
+
+To check same-model reproducibility on a completed job with ranked failures, run `python scripts/smoke_suite.py --source-job <job-id>`. It creates a local suite and candidate job, waits for completion, and compares the selected cases' saved transform parameters and mAP within 1e-6. It leaves the evidence in PostgreSQL and `outputs/web/`.
+
 ## Evaluation method and limits
 
-For the web slice, inference uses 640-pixel input, confidence 0.001, NMS IoU 0.7, and up to 300 raw detections. COCOeval reports AP at IoU 0.50 and across 0.50–0.95, with up to 100 detections; precision and recall count class-aware matches at confidence 0.25 and IoU 0.5. Baseline and stress use the same settings. Inference latency is recorded separately from accuracy. Brightness, brightness/contrast, Gaussian blur, motion blur, Gaussian noise, JPEG compression, fog, rain, partial occlusion, color shift, and defocus are implemented at severity 1–5. Exact settings and per-image seeds are saved. Occlusion runs are marked exploratory because an occluded object may make its original label invalid. Undefined metrics are represented as JSON `null`, and per-class AP is withheld below five ground-truth examples. The remaining failure explorer, regression suites, and deployment gates are tracked in [PLAN.md](PLAN.md).
+For the web slice, inference uses 640-pixel input, confidence 0.001, NMS IoU 0.7, and up to 300 raw detections. COCOeval reports AP at IoU 0.50 and across 0.50–0.95, with up to 100 detections; precision and recall count class-aware matches at confidence 0.25 and IoU 0.5. Baseline and stress use the same settings. Inference latency is recorded separately from accuracy. Brightness, brightness/contrast, Gaussian blur, motion blur, Gaussian noise, JPEG compression, fog, rain, partial occlusion, color shift, and defocus are implemented at severity 1–5. Exact settings and per-image seeds are saved. Occlusion runs are marked exploratory because an occluded object may make its original label invalid. Undefined metrics are represented as JSON `null`, and per-class AP is withheld below five ground-truth examples. The remaining explorer and visualization work is tracked in [PLAN.md](PLAN.md).
 
 The failure gallery uses a separate, simple class-aware greedy match at confidence 0.25 and IoU 0.5. It counts new misses, false detections, and overlapping boxes below the match IoU, then ranks images by a documented weighted score. This is an inspection aid; COCOeval remains the source of the reported benchmark metrics. The first three ranked examples are saved with green ground-truth boxes and red predictions. Repeatability ranking and visual clustering remain planned work.
 

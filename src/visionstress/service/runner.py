@@ -79,7 +79,14 @@ def execute_job(session_factory, store, job_id: int, timeout_seconds: int = 1800
     device = 0 if torch.cuda.is_available() else "cpu"
     torch.manual_seed(spec["seed"])
     np.random.seed(spec["seed"])
-    selected = manifest["split"]["validation"][:spec["max_images"]]
+    if "image_ids" in spec:
+        selected = spec["image_ids"]
+        if not selected or len(selected) > 500 or len(set(selected)) != len(selected) or not set(selected) <= set(manifest["split"]["validation"]):
+            raise ValueError("Suite image IDs must be distinct validation images")
+        if spec.get("inference") != INFERENCE or spec.get("evaluation") != EVALUATOR:
+            raise ValueError("Suite evaluation settings differ from the current runner")
+    else:
+        selected = manifest["split"]["validation"][:spec["max_images"]]
     if not selected:
         raise ValueError("No validation images available")
     image_info = {item["id"]: item for item in manifest["images"]}
