@@ -7,3 +7,7 @@ data/
 models/
 outputs/
 .ultralytics/
+web/node_modules/
+web/dist/
+.env
+*.sqlite3
